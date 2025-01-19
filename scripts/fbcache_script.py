@@ -2,6 +2,7 @@ import gradio as gr
 from fbcache import FBCacheSession
 
 from modules import processing, script_callbacks, scripts, shared
+from modules.sd_samplers_common import setup_img2img_steps
 from modules.ui_components import InputAccordion
 
 
@@ -44,13 +45,20 @@ class FBCacheScript(scripts.Script):
 
     def process_batch(self, p: processing.StableDiffusionProcessing, enabled, residual_diff_threshold, start, end, max_consecutive_cache_hits, *args, **kwargs):
         if enabled and residual_diff_threshold > 0.0 and max_consecutive_cache_hits != 0:
-            self.configure_fbcache(p.steps, residual_diff_threshold, start, end, max_consecutive_cache_hits)
+            total_steps = p.steps
+            initial_step = 1
+            if self.is_img2img:
+                total_steps, steps = setup_img2img_steps(p)
+                initial_step = total_steps - steps
+            self.configure_fbcache(total_steps, initial_step, residual_diff_threshold, start, end, max_consecutive_cache_hits)
 
     def before_hr(self, p: processing.StableDiffusionProcessing, enabled, residual_diff_threshold, start, end, max_consecutive_cache_hits, *args):
         self.detach_fbcache()
-        hr_steps = getattr(p, "hr_second_pass_steps", 0) or p.steps
         if enabled and residual_diff_threshold > 0.0 and max_consecutive_cache_hits != 0:
-            self.configure_fbcache(hr_steps, residual_diff_threshold, start, end, max_consecutive_cache_hits)
+            total_steps = getattr(p, "hr_second_pass_steps", 0) or p.steps
+            total_steps, steps = setup_img2img_steps(p, total_steps)  # hires fix doesn't reduce steps based on denoise strength
+            initial_step = total_steps - steps
+            self.configure_fbcache(total_steps, initial_step, residual_diff_threshold, start, end, max_consecutive_cache_hits)
 
     def postprocess_batch(self, p: processing.StableDiffusionProcessing, *args, **kwargs):
         self.detach_fbcache()
@@ -59,9 +67,9 @@ class FBCacheScript(scripts.Script):
         if self.session is not None:
             self.session.increment_sampling_step()
 
-    def configure_fbcache(self, steps, residual_diff_threshold, start, end, max_consecutive_cache_hits):
+    def configure_fbcache(self, steps, initial_step, residual_diff_threshold, start, end, max_consecutive_cache_hits):
         if self.session is None:
-            self.session = FBCacheSession()
+            self.session = FBCacheSession(initial_step)
         self.session.hook_model(shared.sd_model.model.diffusion_model, steps, residual_diff_threshold, start, end, max_consecutive_cache_hits)
 
     def detach_fbcache(self):

@@ -37,11 +37,11 @@ class FBCacheSession:
     """
     Session for First Block Cache, which holds cache data and provides functions for hooking the model.
     """
-    def __init__(self):
+    def __init__(self, initial_step: int = 1):
         self.buffers: dict[str, th.Tensor] = {}
         self.stored_forward = None
         self.unet_reference = None
-        self.current_sampling_step = 1
+        self.current_sampling_step = initial_step
         self.consecutive_cache_hits = 0
 
     def get_buffer(self, name: str) -> Optional[th.Tensor]:
