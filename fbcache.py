@@ -43,6 +43,9 @@ class FBCacheSession:
         self.unet_reference = None
         self.current_sampling_step = initial_step
         self.consecutive_cache_hits = 0
+        # track multiple model calls in the same sampling step. enables compatibility with methods like PAG
+        self.call_sequence_id = 0
+        self.cache_hit_this_step = False
 
     def get_buffer(self, name: str) -> Optional[th.Tensor]:
         return self.buffers.get(name)
@@ -50,11 +53,13 @@ class FBCacheSession:
     def set_buffer(self, name: str, buffer: th.Tensor):
         self.buffers[name] = buffer
 
-    def increment_sampling_step(self):
+    def next_sampling_step(self):
         self.current_sampling_step += 1
+        self.call_sequence_id = 0
+        self.cache_hit_this_step = False
 
     def apply_prev_hidden_states_residual(self, h: th.Tensor) -> th.Tensor:
-        hidden_states_residual = self.get_buffer("hidden_states_residual")
+        hidden_states_residual = self.get_buffer(f"hidden_states_residual-{self.call_sequence_id}")
         h = hidden_states_residual + h
         return h.contiguous()
 
@@ -129,6 +134,11 @@ class FBCacheSession:
                 h = module(h, emb, context)
                 hs.append(h)
                 if id == 1:
+                    # when model is called multiple times in one sampling step, only use the first call to check the cache
+                    if cache.call_sequence_id > 0:
+                        if cache.cache_hit_this_step:
+                            can_use_cache = True
+                        break
                     first_hidden_states_residual = h - original_h
                     can_use_cache = cache.get_can_use_cache(first_hidden_states_residual, threshold=residual_diff_threshold)
                     if validate_use_cache is not None:
@@ -138,10 +148,13 @@ class FBCacheSession:
                     del first_hidden_states_residual
 
             if can_use_cache:
+                cache.cache_hit_this_step = True
                 h = cache.apply_prev_hidden_states_residual(h)
             else:
+                cache.cache_hit_this_step = False
                 h, hidden_states_residual = call_remaining_blocks(self, hs, h, emb, context)
-                cache.set_buffer("hidden_states_residual", hidden_states_residual)
+                cache.set_buffer(f"hidden_states_residual-{cache.call_sequence_id}", hidden_states_residual)
+            cache.call_sequence_id += 1
 
             h = h.type(x.dtype)
 

@@ -9,7 +9,7 @@ from modules.ui_components import InputAccordion
 class FBCacheScript(scripts.Script):
     def __init__(self):
         self.session: FBCacheSession = None
-        script_callbacks.on_cfg_after_cfg(self.increment_sampling_step)
+        script_callbacks.on_cfg_after_cfg(self.next_sampling_step)
 
     def title(self):
         return "First Block Cache"
@@ -63,9 +63,9 @@ class FBCacheScript(scripts.Script):
     def postprocess_batch(self, p: processing.StableDiffusionProcessing, *args, **kwargs):
         self.detach_fbcache()
 
-    def increment_sampling_step(self, *args):
+    def next_sampling_step(self, *args):
         if self.session is not None:
-            self.session.increment_sampling_step()
+            self.session.next_sampling_step()
 
     def configure_fbcache(self, steps, initial_step, residual_diff_threshold, start, end, max_consecutive_cache_hits):
         if self.session is None:
