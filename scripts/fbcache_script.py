@@ -41,7 +41,11 @@ class FBCacheScript(scripts.Script):
                 value=-1, minimum=-1, step=1,
             )
 
-        return enabled, residual_diff_threshold, start, end, max_consecutive_cache_hits
+        components = [enabled, residual_diff_threshold, start, end, max_consecutive_cache_hits]
+        for component in components:
+            component.do_not_save_to_config = True
+
+        return components
 
     def process_batch(self, p: processing.StableDiffusionProcessing, enabled, residual_diff_threshold, start, end, max_consecutive_cache_hits, *args, **kwargs):
         if enabled and residual_diff_threshold > 0.0 and max_consecutive_cache_hits != 0:
